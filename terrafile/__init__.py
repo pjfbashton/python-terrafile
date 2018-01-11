@@ -84,10 +84,10 @@ def update_modules(path):
             shutil.rmtree(target, ignore_errors=True)
             print('Fetching {}/{}'.format(module_path_name, name))
             shutil.copytree(source, target)
+            print "exiting"
             continue
         else:
-            sys.stderr.write('Invalid module source : {}\n'.format(raw_source))
-            sys.exit(1)
+            source = raw_source
         version = repository_details['version']
 
         # Skip this module if it has already been checked out.
