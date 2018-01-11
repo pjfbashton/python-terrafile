@@ -84,7 +84,6 @@ def update_modules(path):
             shutil.rmtree(target, ignore_errors=True)
             print('Fetching {}/{}'.format(module_path_name, name))
             shutil.copytree(source, target)
-            print "exiting"
             continue
         else:
             source = raw_source
