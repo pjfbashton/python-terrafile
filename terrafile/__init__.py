@@ -5,17 +5,18 @@ import subprocess
 import sys
 import yaml
 import requests
+import re
 
 
-REGISTRY_BASE_URL = 'https://registry.terraform.io/v1/modules'
+REGISTRY_BASE_URL = 'https://registry.terraform.io/v1/modules/'
 
 def get_source_from_registry(module_name):
     response = requests.get('{}{}'.format(REGISTRY_BASE_URL, module_name))
-    if response.ok:
-        data = response.json()
+    data = response.json()
+    if 'errors' not in data.keys():
         return data['source']
     else:
-        sys.stderr.write('Error looking up module in Terraform Registry {}\n'.format(response.reason))
+        sys.stderr.write('Error looking up module in Terraform Registry: {}\n'.format(data['errors']))
         sys.exit(1)
 
 def run(*args, **kwargs):
@@ -56,6 +57,16 @@ def has_git_tag(path, tag):
     return tag in tags
 
 
+def is_valid_registry_source(source):
+    name_sub_regex = '[0-9A-Za-z](?:[0-9A-Za-z-_]{0,62}[0-9A-Za-z])?'
+    provider_sub_regex = '[0-9a-z]{1,64}'
+    registry_regex = re.compile('^({})\\/({})\\/({})(?:\\/\\/(.*))?$'.format(name_sub_regex, name_sub_regex, provider_sub_regex))
+    if registry_regex.match(source):
+        return True
+    else:
+        return False
+
+
 def update_modules(path):
     terrafile_path = get_terrafile_path(path)
     module_path = os.path.dirname(terrafile_path)
@@ -64,14 +75,20 @@ def update_modules(path):
     terrafile = read_terrafile(terrafile_path)
 
     for name, repository_details in sorted(terrafile.items()):
-        raw_source = repository_details['source']
-        if raw_source.startswith('tfr::'):
-            tfr_module_path = raw_source.split('tfr::')[-1]
-            source = get_source_from_registry(tfr_module_path)
-        else:
-            source = raw_source
-        version = repository_details['version']
         target = os.path.join(module_path, name)
+        raw_source = repository_details['source']
+        if is_valid_registry_source(raw_source):
+            source = get_source_from_registry(raw_source)
+        elif os.path.isdir(raw_source):
+            source = os.path.abspath(raw_source)
+            shutil.rmtree(target, ignore_errors=True)
+            print('Fetching {}/{}'.format(module_path_name, name))
+            shutil.copytree(source, target)
+            continue
+        else:
+            sys.stderr.write('Invalid module source : {}\n'.format(raw_source))
+            sys.exit(1)
+        version = repository_details['version']
 
         # Skip this module if it has already been checked out.
         if has_git_tag(path=target, tag=version):
