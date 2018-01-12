@@ -9,12 +9,13 @@ import re
 
 
 REGISTRY_BASE_URL = 'https://registry.terraform.io/v1/modules/'
+GITHUB_API_BASE_URL = 'https://api.github.com/repos/'
 
 def get_source_from_registry(module_name):
     response = requests.get('{}{}'.format(REGISTRY_BASE_URL, module_name))
     data = response.json()
     if 'errors' not in data.keys():
-        return data['source']
+        return data
     else:
         sys.stderr.write('Error looking up module in Terraform Registry: {}\n'.format(data['errors']))
         sys.exit(1)
@@ -56,6 +57,10 @@ def has_git_tag(path, tag):
             tags.update(output.split())
     return tag in tags
 
+def get_repo_tags(repo_path):
+    response = requests.get('{}{}'.format(GITHUB_API_BASE_URL, repo_path))
+    return [r['name'] for r in response.json()]
+
 
 def is_valid_registry_source(source):
     name_sub_regex = '[0-9A-Za-z](?:[0-9A-Za-z-_]{0,62}[0-9A-Za-z])?'
@@ -78,7 +83,15 @@ def update_modules(path):
         target = os.path.join(module_path, name)
         raw_source = repository_details['source']
         if is_valid_registry_source(raw_source):
-            source = get_source_from_registry(raw_source)
+            data = get_source_from_registry(raw_source)
+            source = data['source']
+            raw_version = repository_details['version'].strip('v')
+            repo_path = '{}/terraform-{}-{}/tags'.format(data['namespace'], data['provider'], data['name'])
+            tags = get_repo_tags(repo_path)
+            if raw_version in tags:
+                version = raw_version
+            else:
+                version = 'v{}'.format(raw_version)
         elif os.path.isdir(raw_source):
             source = os.path.abspath(raw_source)
             shutil.rmtree(target, ignore_errors=True)
@@ -87,7 +100,7 @@ def update_modules(path):
             continue
         else:
             source = raw_source
-        version = repository_details['version']
+            version = repository_details['version']
 
         # Skip this module if it has already been checked out.
         if has_git_tag(path=target, tag=version):
